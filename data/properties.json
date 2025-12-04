@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1,
+    "title": "Spacious 2-Bedroom Apartment near UNIBEN",
+    "description": "Well-furnished apartment with constant water and electricity. Close to University of Benin. 24/7 security.",
+    "price": 180000,
+    "type": "apartment",
+    "bedrooms": 2,
+    "bathrooms": 2,
+    "state": "Edo",
+    "city": "Benin City",
+    "area": "Ugbowo",
+    "address": "Ugbowo Road",
+    "images": [],
+    "landlord_id": 2,
+    "landlord_name": "Demo Landlord",
+    "features": [
+      "24/7 Security",
+      "Constant Water",
+      "Furnished",
+      "WiFi Ready"
+    ],
+    "contact": "+2348098765432",
+    "created_at": "2024-01-15",
+    "status": "available",
+    "likes": [],
+    "views": 0
+  }
+]
