@@ -151,6 +151,7 @@ def serve_static(path):
 def authenticate_request(req):
 	auth = req.headers.get('Authorization') or req.args.get('token')
 	if not auth:
+		app.logger.debug('authenticate_request: no Authorization header or token param')
 		return None
 	if auth.lower().startswith('bearer '):
 		token = auth.split(None, 1)[1]
@@ -158,6 +159,7 @@ def authenticate_request(req):
 		token = auth
 	user_id = TOKENS.get(token)
 	if user_id is None:
+		app.logger.debug('authenticate_request: token provided but no matching user_id in TOKENS')
 		return None
 	row = query_db('SELECT * FROM users WHERE id = ?', (user_id,), one=True)
 	return dict(row) if row else None
@@ -204,6 +206,19 @@ def api_me():
 		return jsonify({'error': 'Unauthorized'}), 401
 	user_out = {k: user[k] for k in user if k != 'password'}
 	return jsonify({'user': user_out})
+
+
+@app.route('/api/debug/whoami', methods=['GET'])
+def api_debug_whoami():
+	"""Debug endpoint: returns current Authorization header and resolved user (if any).
+	Use this from the browser to confirm the header is sent and token resolves to a user.
+	"""
+	auth_header = request.headers.get('Authorization')
+	user = authenticate_request(request)
+	user_out = None
+	if user:
+		user_out = {k: user[k] for k in user if k != 'password'}
+	return jsonify({'authorization_header': auth_header, 'user': user_out})
 
 
 def build_property_dict(row):
@@ -337,6 +352,42 @@ def api_upload():
 	except Exception as e:
 		app.logger.exception('Upload failed')
 		return jsonify({'error': 'Upload failed', 'message': str(e)}), 500
+
+
+@app.route('/api/uploads/clear_my_uploads', methods=['POST'])
+def api_clear_my_uploads():
+	"""Delete image files and DB rows for properties owned by the authenticated user.
+	This is authenticated and only affects images tied to properties where
+	properties.landlord_id == current_user.id.
+	Returns a JSON report of removed rows.
+	"""
+	user = authenticate_request(request)
+	if not user:
+		return jsonify({'error': 'Unauthorized'}), 401
+	try:
+		# find images for properties owned by this user
+		rows = query_db('SELECT images.id AS id, images.filename AS filename FROM images JOIN properties ON images.property_id = properties.id WHERE properties.landlord_id = ?', (user['id'],))
+		removed = []
+		for r in rows:
+			img_id = r['id']
+			filename = r['filename']
+			file_path = os.path.join(IMAGES_DIR, filename) if filename else None
+			file_existed = False
+			try:
+				if file_path and os.path.exists(file_path):
+					os.remove(file_path)
+					file_existed = True
+			except Exception:
+				app.logger.exception('Failed to remove image file: %s', file_path)
+			try:
+				query_db('DELETE FROM images WHERE id = ?', (img_id,), commit=True)
+			except Exception:
+				app.logger.exception('Failed to delete DB row for image id %s', img_id)
+			removed.append({'id': img_id, 'filename': filename, 'file_existed': file_existed})
+		return jsonify({'removed': removed, 'count': len(removed)})
+	except Exception as e:
+		app.logger.exception('Failed to clear uploads for user %s', user.get('id'))
+		return jsonify({'error': 'Failed to clear uploads', 'message': str(e)}), 500
 
 
 if __name__ == '__main__':
