@@ -169,19 +169,26 @@ def authenticate_request(req):
 def api_register():
 	data = request.get_json() or {}
 	email = (data.get('email') or '').strip().lower()
-	exists = query_db('SELECT id FROM users WHERE email = ?', (email,), one=True)
-	if exists:
-		return jsonify({'error': 'User with this email already exists'}), 400
-	name = data.get('name') or f'User{int(datetime.utcnow().timestamp())}'
-	pwd = data.get('password') or ''
-	role = data.get('role') or 'tenant'
-	phone = data.get('phone') or ''
-	created_at = datetime.utcnow().strftime('%Y-%m-%d')
-	uid = query_db('INSERT INTO users (name,email,password,role,phone,created_at) VALUES (?,?,?,?,?,?)', (name, email, pwd, role, phone, created_at), commit=True)
-	token = f"{uid}-{int(datetime.utcnow().timestamp())}"
-	TOKENS[token] = uid
-	user = query_db('SELECT id,name,email,role,phone,created_at FROM users WHERE id = ?', (uid,), one=True)
-	return jsonify({'user': dict(user), 'token': token})
+	app.logger.debug('Register attempt for email: %s', email)
+	try:
+		exists = query_db('SELECT id FROM users WHERE email = ?', (email,), one=True)
+		if exists:
+			app.logger.debug('Register failed: email exists %s', email)
+			return jsonify({'error': 'User with this email already exists'}), 400
+		name = data.get('name') or f'User{int(datetime.utcnow().timestamp())}'
+		pwd = data.get('password') or ''
+		role = data.get('role') or 'tenant'
+		phone = data.get('phone') or ''
+		created_at = datetime.utcnow().strftime('%Y-%m-%d')
+		uid = query_db('INSERT INTO users (name,email,password,role,phone,created_at) VALUES (?,?,?,?,?,?)', (name, email, pwd, role, phone, created_at), commit=True)
+		token = f"{uid}-{int(datetime.utcnow().timestamp())}"
+		TOKENS[token] = uid
+		user = query_db('SELECT id,name,email,role,phone,created_at FROM users WHERE id = ?', (uid,), one=True)
+		app.logger.debug('Register success for email %s id %s', email, uid)
+		return jsonify({'user': dict(user), 'token': token})
+	except Exception as e:
+		app.logger.exception('Registration error for %s', email)
+		return jsonify({'error': 'Registration failed', 'message': str(e)}), 500
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -189,14 +196,21 @@ def api_login():
 	data = request.get_json() or {}
 	email = (data.get('email') or '').strip().lower()
 	pwd = data.get('password') or ''
-	user = query_db('SELECT * FROM users WHERE lower(email) = ? AND password = ?', (email, pwd), one=True)
-	if not user:
-		return jsonify({'error': 'Invalid credentials'}), 401
-	uid = user['id']
-	token = f"{uid}-{int(datetime.utcnow().timestamp())}"
-	TOKENS[token] = uid
-	user_out = query_db('SELECT id,name,email,role,phone,created_at FROM users WHERE id = ?', (uid,), one=True)
-	return jsonify({'user': dict(user_out), 'token': token})
+	app.logger.debug('Login attempt for email: %s', email)
+	try:
+		user = query_db('SELECT * FROM users WHERE lower(email) = ? AND password = ?', (email, pwd), one=True)
+		if not user:
+			app.logger.debug('Login failed for email %s: invalid credentials', email)
+			return jsonify({'error': 'Invalid credentials'}), 401
+		uid = user['id']
+		token = f"{uid}-{int(datetime.utcnow().timestamp())}"
+		TOKENS[token] = uid
+		user_out = query_db('SELECT id,name,email,role,phone,created_at FROM users WHERE id = ?', (uid,), one=True)
+		app.logger.debug('Login success for email %s id %s', email, uid)
+		return jsonify({'user': dict(user_out), 'token': token})
+	except Exception as e:
+		app.logger.exception('Login error for %s', email)
+		return jsonify({'error': 'Login failed', 'message': str(e)}), 500
 
 
 @app.route('/api/users/me', methods=['GET'])
