@@ -1,4 +1,3 @@
-
 import os
 import sqlite3
 from datetime import datetime
@@ -14,13 +13,93 @@ IMAGES_DIR = os.path.join(FRONTEND_DIR, 'nestr images')
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path='')
 CORS(app)
 
+# Initialize database on app startup
+def init_db_on_startup():
+	try:
+		ensure_dirs()
+		if not os.path.exists(DB_FILE):
+			db = sqlite3.connect(DB_FILE)
+			cur = db.cursor()
+			# users table
+			cur.execute('''
+				CREATE TABLE users (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT,
+					email TEXT UNIQUE,
+					password TEXT,
+					role TEXT,
+					phone TEXT,
+					created_at TEXT
+				)
+			''')
+			# properties table
+			cur.execute('''
+				CREATE TABLE properties (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					title TEXT,
+					description TEXT,
+					price INTEGER,
+					type TEXT,
+					bedrooms INTEGER,
+					bathrooms INTEGER,
+					state TEXT,
+					city TEXT,
+					area TEXT,
+					address TEXT,
+					landlord_id INTEGER,
+					landlord_name TEXT,
+					contact TEXT,
+					created_at TEXT,
+					status TEXT DEFAULT 'available',
+					views INTEGER DEFAULT 0
+				)
+			''')
+			# images table
+			cur.execute('''
+				CREATE TABLE images (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					property_id INTEGER,
+					filename TEXT
+				)
+			''')
+			# likes table
+			cur.execute('''
+				CREATE TABLE likes (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					property_id INTEGER,
+					user_id INTEGER
+				)
+			''')
+
+			# seed demo users and property
+			now = datetime.utcnow().strftime('%Y-%m-%d')
+			cur.execute('INSERT INTO users (name,email,password,role,phone,created_at) VALUES (?,?,?,?,?,?)',
+						('Demo Student','student@demo.com','demo123','tenant','+2348012345678', now))
+			cur.execute('INSERT INTO users (name,email,password,role,phone,created_at) VALUES (?,?,?,?,?,?)',
+						('Demo Landlord','landlord@demo.com','demo123','landlord','+2348098765432', now))
+			landlord_id = cur.lastrowid
+			cur.execute('INSERT INTO properties (title,description,price,type,bedrooms,bathrooms,state,city,area,address,landlord_id,landlord_name,contact,created_at,status,views) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+						('Spacious 2-Bedroom Apartment near UNIBEN','Well-furnished apartment with constant water and electricity. Close to University of Benin. 24/7 security.',180000,'apartment',2,2,'Edo','Benin City','Ugbowo','Ugbowo Road',landlord_id,'Demo Landlord','+2348098765432', now,'available',0))
+
+			db.commit()
+			cur.close()
+			db.close()
+			print('✅ Database initialized successfully')
+	except Exception as e:
+		print(f'❌ Database initialization error: {e}')
+		import traceback
+		traceback.print_exc()
+
 # Simple in-memory token -> user_id mapping for dev
 TOKENS = {}
 
 
 def ensure_dirs():
-	os.makedirs(DATA_DIR, exist_ok=True)
-	os.makedirs(IMAGES_DIR, exist_ok=True)
+	try:
+		os.makedirs(DATA_DIR, exist_ok=True)
+		os.makedirs(IMAGES_DIR, exist_ok=True)
+	except Exception as e:
+		print(f'Warning: Could not create directories: {e}')
 
 
 def get_db():
@@ -47,75 +126,8 @@ def query_db(query, args=(), one=False, commit=False):
 			pass
 
 
-def init_db():
-	ensure_dirs()
-	if not os.path.exists(DB_FILE):
-		db = sqlite3.connect(DB_FILE)
-		cur = db.cursor()
-		# users table
-		cur.execute('''
-			CREATE TABLE users (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				name TEXT,
-				email TEXT UNIQUE,
-				password TEXT,
-				role TEXT,
-				phone TEXT,
-				created_at TEXT
-			)
-		''')
-		# properties table
-		cur.execute('''
-			CREATE TABLE properties (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				title TEXT,
-				description TEXT,
-				price INTEGER,
-				type TEXT,
-				bedrooms INTEGER,
-				bathrooms INTEGER,
-				state TEXT,
-				city TEXT,
-				area TEXT,
-				address TEXT,
-				landlord_id INTEGER,
-				landlord_name TEXT,
-				contact TEXT,
-				created_at TEXT,
-				status TEXT DEFAULT 'available',
-				views INTEGER DEFAULT 0
-			)
-		''')
-		# images table
-		cur.execute('''
-			CREATE TABLE images (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				property_id INTEGER,
-				filename TEXT
-			)
-		''')
-		# likes table
-		cur.execute('''
-			CREATE TABLE likes (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				property_id INTEGER,
-				user_id INTEGER
-			)
-		''')
-
-		# seed demo users and property
-		now = datetime.utcnow().strftime('%Y-%m-%d')
-		cur.execute('INSERT INTO users (name,email,password,role,phone,created_at) VALUES (?,?,?,?,?,?)',
-					('Demo Student','student@demo.com','demo123','tenant','+2348012345678', now))
-		cur.execute('INSERT INTO users (name,email,password,role,phone,created_at) VALUES (?,?,?,?,?,?)',
-					('Demo Landlord','landlord@demo.com','demo123','landlord','+2348098765432', now))
-		landlord_id = cur.lastrowid
-		cur.execute('INSERT INTO properties (title,description,price,type,bedrooms,bathrooms,state,city,area,address,landlord_id,landlord_name,contact,created_at,status,views) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-					('Spacious 2-Bedroom Apartment near UNIBEN','Well-furnished apartment with constant water and electricity. Close to University of Benin. 24/7 security.',180000,'apartment',2,2,'Edo','Benin City','Ugbowo','Ugbowo Road',landlord_id,'Demo Landlord','+2348098765432', now,'available',0))
-
-		db.commit()
-		cur.close()
-		db.close()
+# This old function is no longer needed - DB init happens on startup now
+# Keeping it for backward compatibility if needed
 
 
 @app.teardown_appcontext
@@ -405,5 +417,8 @@ def api_clear_my_uploads():
 
 
 if __name__ == '__main__':
-	init_db()
+	init_db_on_startup()
 	app.run(host='0.0.0.0', port=5000, debug=True)
+else:
+	# Initialize database when deployed (e.g., on Vercel, Heroku)
+	init_db_on_startup()
